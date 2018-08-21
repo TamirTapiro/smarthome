@@ -1,0 +1,3 @@
+/home/ran/Downloads/linux-project-master/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/ran/Downloads/linux-project-master/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/ran/Downloads/linux-project-master/cmake-build-debug/CMakeFiles/linux_project_master.dir

@@ -1,0 +1,26 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/ran/Downloads/linux-project-master/DB/dbInit.c
+stdio.h
+-
+stdlib.h
+-
+sqlite3.h
+-
+
+/home/ran/Downloads/linux-project-master/DB/main.c
+iostream
+-
+stdio.h
+-
+sqlite3.h
+-
+stdlib.h
+-
+

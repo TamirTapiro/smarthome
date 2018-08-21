@@ -1,0 +1,675 @@
+#!/bin/bash 
+
+OPT=$(getopt -n "smart_home" -o "h,v,l:,r:,s,c:,t:" -l "homeinfo,help,overall,login:,register:,socket-setcritical:,timer:,socket-status:,socket-add:,socket-remove:,removefm:,logout" -- "$@")
+
+
+
+eval set -- "$OPT"
+#flags
+registerFlag=0
+viewFlag=0
+loginFlag=0
+criticalFlag=0
+socketStatusFlag=0
+socketAddFlag=0
+socketRemoveFlag=0
+userRemoveInfoFlag=0
+timerFlag=0
+homeInfoFlag=0
+
+#default values
+user=""
+userid=""
+homeid=""
+password=""
+userKey=$GLOBAL_USER_KEY		#saves global user in terminal.
+socketStatusInfo=""			#socketStatusInfo related to turn on/off functionality. saves information recived from user ($2)
+socketId=""
+socketStatus=""				#socketStatus is the socket status if on or off.
+socketDetails=""			#socketDetails related to add socket funcionality, saves the input from user ($2)
+socketName=""		
+criticalSocketStatus=""			#criticalSocketStatus is what recived from user when adding new socket, if critical or not.
+userRemoveInfo=""
+criticalSocketInfo=""
+timerInfo=""
+GLOBAL_USER=""
+
+
+
+# decoration
+format="%3s | %-12s | %-15s | %-50s\n"		#format for output
+format_orders="%3s | %-30s | %-50s | %-12s\n"		#format for output
+#server address link
+server_address="http://localhost"
+
+
+
+
+
+
+#checking correct input from user. needs to be xxx:yyy:zzz format - relevant for login and register
+function check_creds(){
+		tempvar="$1"	
+		separators="${tempvar//[^:]}"	# checking amount of ':' in credentials string
+		
+		if [ "${#separators}" == 2 ]; then
+			#if have exactly 1 ':' delimiter, set key to apikey variable
+
+			homeid="${1%%:*}"
+			userid=$(echo $1#*: | cut -d ":" -f 2 | cut -d ":" -f 1)
+			password="${1##*:}"			
+		#check input from user for number of ":". 
+		elif [ "${#separators}" == 0 ]; then
+			echo "Smart home: credentials do not contain an API component"
+			exit 1
+		fi
+		# check not empty credentials
+		if [ -z "$password" ] || [ -z "$homeid" ] || [ -z "$userid" ];then
+			echo "Smart home : User ID , home ID and password can not be empty!"	
+			exit 1
+		fi
+}
+
+
+function check_login_creds(){
+		tempvar="$1"	
+		separators="${tempvar//[^:]}"	# checking amount of ':' in credentials string
+		
+		if [ "${#separators}" == 1 ]; then
+			#if have exactly 1 ':' delimiter, set key to apikey variable
+
+			userid="${1%%:*}"
+	
+			password="${1##*:}"	 		
+			
+		#check input from user for number of ":". 
+		elif [ "${#separators}" == 0 ]; then
+			echo "Smart home: credentials do not contain an API component" 
+			exit 1
+		fi
+		# check not empty credentials
+		if [ -z "$password" ] || [ -z "$userid" ];then
+			echo "Smart home : User and login can not be empty."	
+			exit 1
+		fi
+}
+
+
+
+
+
+#checking correct input from user, needs to be xxx:yyy format while yyy = off or on for socket status.- relevant for socket off/on status
+function check_sockets_creds(){
+
+		tempvar="$1"	
+		separators="${tempvar//[^:]}"	# checking amount of ':' in credentials string
+		
+		if [ "${#separators}" == 1 ]; then
+			#if have exactly 1 ':' delimiter, set key to apikey variable
+			
+			socketId="${1%%:*}"
+			#socket status is on or off. 
+			socketStatus="${1##*:}"			
+		#check input from user for number of ":". 
+		elif [ "${#separators}" == 0 ]; then
+			echo "Smart home: credentials do not contain an API component"
+			exit 1
+		fi
+		# check not empty credentials
+		if [ -z "$socketId" ] || [ -z "$socketStatus" ];then
+			echo "Smart home : Socket ID and Socket status (ID and status) can not be empty!"	
+			exit 1
+		fi
+		#check if socket status is currect
+		if [ "${socketStatus}" != "on" ] && [ "${socketStatus}" != "off" ];then
+			echo "Smart home : Socket status must be either on or off.
+
+--socket-status <SOCKETID:ON/OFF>.
+
+see -h | --help for more information.
+"
+			exit 1
+		fi
+
+}
+
+
+function check_addSocket_creds(){
+		tempvar="$1"	
+		separators="${tempvar//[^:]}"	# checking amount of ':' in credentials string
+		
+		if [ "${#separators}" == 0 ]; then
+			#if have exactly 1 ':' delimiter, set key to apikey variable
+
+			socketName="${1%%:*}"
+		#check input from user for number of ":". 
+		elif [ "${#separators}" >0 ]; then
+			echo "Smart home: credentials do not contain an API component"
+			exit 1
+		fi
+		# check not empty credentials
+		if [ -z "$socketName" ];then
+			echo "Smart home : Socket name can not be empty!"	
+			exit 1
+		fi
+}
+
+
+function check_removeFm_creds(){
+		tempvar="$1"	
+		separators="${tempvar//[^:]}"	# checking amount of ':' in credentials string
+		
+		if [ "${#separators}" == 0 ]; then
+			#if have exactly 1 ':' delimiter, set key to apikey variable
+
+			userRemoveInfo="${1%%:*}"
+			
+		#check input from user for number of ":". 
+		elif [ "${#separators}" > 0 ]; then
+			echo "Smart home: credentials do not contain an API component"
+			exit 1
+		fi
+		# check not empty credentials
+		if [ -z "$userRemoveInfo" ];then
+			echo "Smart home : User info must not be empty."	
+			exit 1
+		fi
+}
+
+
+function set_critical_socket_creds(){
+
+		tempvar="$1"	
+		separators="${tempvar//[^:]}"	# checking amount of ':' in credentials string
+		
+		if [ "${#separators}" == 1 ]; then
+			#if have exactly 1 ':' delimiter, set key to apikey variable
+			
+			socketId="${1%%:*}"
+			#critical socket status is 1 for critical or 0 for non critical. 
+			criticalSocketInfo="${1##*:}"			
+		#check input from user for number of ":". 
+		elif [ "${#separators}" == 0 ]; then
+			echo "Smart home: credentials do not contain an API component"
+			exit 1
+		fi
+		# check not empty credentials
+		if [ -z "$socketId" ] || [ -z "$criticalSocketInfo" ];then
+			echo "Smart home : Socket ID and Socket status (ID and status) can not be empty!"	
+			exit 1
+		fi
+		#check if socket status is currect
+		if [ "${criticalSocketInfo}" != 1 ] && [ "${criticalSocketInfo}" != 0 ];then
+			echo "Smart home : Socket status must be either 1 for critical or 0 for non critical.
+
+"
+			exit 1
+		fi
+
+}
+
+
+function check_socket_remove_creds(){
+		tempvar="$1"	
+		separators="${tempvar//[^:]}"	# checking amount of ':' in credentials string
+		
+		if [ "${#separators}" == 1 ]; then
+			#if have exactly 1 ':' delimiter, set key to apikey variable
+
+			socketId="${1%%:*}"
+
+		#there is no need to fill ":" here. user is already logged in, there for we need only one param (in this case socket id), other wise there is no access to this func.
+		elif [ "${#separators}" != 0 ]; then
+			echo "Smart home: credentials do not contain an API component"
+			exit 1
+		fi
+		# check not empty credentials
+		#user logged in first.
+		if [ -z "$socketId" ] || [ -z "$user" ];then
+			echo "Smart home : Socket info must not be empty."	
+			exit 1
+		fi
+}
+
+
+function check_timer_creds(){
+		tempvar="$1"	
+		separators="${tempvar//[^:]}"	# checking amount of ':' in credentials string
+		
+		if [ "${#separators}" == 1 ]; then
+			#if have exactly 1 ':' delimiter, set key to apikey variable
+
+			socketId="${1%%:*}"
+			timerInfo="${1##*:}"			
+
+		#check input from user for number of ":". 
+		elif [ "${#separators}" == 0 ]; then
+			echo "Smart home: credentials do not contain an API component"
+			exit 1
+		fi
+		# check not empty credentials
+		#user logged in first.
+		if [ -z "$socketId" ] || [ -z "$timerInfo" ];then
+			echo "Smart home : Socket ID and time must not be empty."	
+			exit 1
+		fi
+}
+
+
+#Synopsis - not finished.
+function help(){
+	echo "Smart home socket system :
+	
+	./smart_home -h :	this synopsis
+	./smart_home -v :	version with authors names
+	
+	Register to system:
+		./smart_home --register | -r homeid:userid:password
+
+	Login to system:
+		./smart_home --login homeid:userid:password
+
+	Logout:
+		./smart_home --logout
+	
+			
+
+	ACTIONS :
+	
+	Socket related actions:
+	
+	set critical socket:
+		./smart_home --socket-setcritical | -c <SOCKETID:STATUS>, while status is 0 for non critical socket and 1 for critical socket.
+		
+	Turn socket on/off:
+		./smart_home --socket-status <SOCKETID:SOCKET_STATUS> , while socket status is: on/off.
+	
+	Add new socket:
+		./smart_home --socket-add <SOCKET_NAME>
+	
+	Remove socket:
+		./smart_home --socket-remove <SOCKETID>.
+
+	Set timer:
+		./smart_home --timer <SOCKETID:TIME> 
+
+	Note: User must be logged in first in order to use those functions.
+
+
+
+	Users related actions:
+
+	Remove family member (user):
+
+		./smart_home --removefm <USERID_TO_REMOVE:CURRENT_USER>
+
+	Show home information:
+
+		./smart_home --homeinfo
+
+"
+    exit
+}
+
+function log()
+{
+	if ! [ -e "user.txt" ] || ! [ -e "home.txt" ]; then
+		echo "You must log - in first!" 1>&2
+		exit 1
+	fi  
+	user=$(cat "user.txt" | jq -r ".id")
+	homeid=$(cat "home.txt" | jq -r ".homeID")
+}
+
+
+function log_out()
+{
+	if ! [ -e "user.txt" ] || ! [ -e "home.txt" ]; then
+		echo "There is no user logged in." 1>&2
+		exit 1
+	fi  
+	rm "user.txt" 
+	rm "home.txt" 
+	echo "You have logged out"
+}
+
+
+while [ "$1" != "--" ]; do
+    case "$1" in
+    	-h|--help)
+            	help
+            ;;
+	#register to system
+  	-r|--register)
+		register_info="$2"
+            	registerFlag=1
+            shift
+            ;;
+	#login to system.
+	-l|--login)
+            	register_info="$2"
+            	loginFlag=1
+            	shift
+	    ;;
+	#set existing socket status for critical or not critical. must be logged in first in order to use this functionality.
+	-c|--socket-setcritical)
+		log		
+            	criticalFlag=1
+		criticalSocketInfo="$2"
+	    	shift
+	    ;;
+	#not implemented yet. probably going to delete it.
+	-s|--socket)
+         	log
+		viewFlag=1
+            	shift
+	    ;;
+	#set the status of a socket , on or off. must be logged in first in order to use this functionality.
+	--socket-status)
+		log		
+		socketStatusInfo=$2
+		socketStatusFlag=1
+            	shift
+	    ;;
+	#add new socket, and set if critical or not. must be logged in first in order to use this functionality.
+	--socket-add)
+		log
+		socketDetails=$2
+		socketAddFlag=1
+            	shift
+	    ;;
+	#remove existing socket, must be logged in first in order to use this functionality
+	--socket-remove)
+		log
+		socketId=$2
+		socketRemoveFlag=1
+            	shift
+	    ;;
+	#remove family member (in other words remove user). must be logged in first in order to use this functionality.
+	--removefm)
+		log
+		userRemoveInfo=$2
+		userRemoveInfoFlag=1
+            	shift
+	    ;;
+	#set timer for specific socket. must be logged in first in order to use this functionality.
+	-t|--timer)
+            	timerFlag=1
+		timerInfo="$2"
+            	shift
+	    ;;
+	#show all socket information for current home for logged in user. must be logged in first in order to use this functionality.
+	--homeinfo)
+		log
+		homeInfoFlag=1
+	    ;;
+	--logout)
+		log_out
+		exit 1
+            ;;
+	 *)
+			echo "Unknown parameter"
+			exit 1
+            ;;
+    esac
+    shift
+	
+done
+
+
+
+if ! [ -z "$2" ]; then
+	echo "smart_home: unknown extra arguments : "$2""
+	exit 1
+fi
+
+
+if [ "$registerFlag" == 1 ]; then
+	
+	if ! [ -z "$register_info" ]; then
+		check_creds "$register_info"
+		
+		data=$(curl -s ""$server_address"/Register/uid="$userid"&hid=$homeid&password="$password"")
+		if [ "$(jq -r ".status" <<< "$data")"  == "success" ]; then
+
+			echo -e "\n--------------------\nRegistration agent : You registered successfully\n--------------------\n"
+		
+		else
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nRegistration agent :  $message\n--------------------\n"
+			exit 1
+		fi
+	else
+		echo "Incorrect credentials"
+		exit 1
+	fi
+fi
+
+
+if [ "$loginFlag" == 1 ]; then
+
+	#if user already logged in.
+	if [ -e "user.txt" ] || [ -e "home.txt" ];then
+		echo "User: $(cat "user.txt" | jq -r ".id") already logged in."
+	exit 1
+	fi
+
+
+	if ! [ -z "$register_info" ]; then
+		check_login_creds "$register_info"
+		
+
+		#we need to check for login info returned from login function. 
+		data=$(curl -s ""$server_address"/Login/uid="$userid"&password="$password"")
+		tmp="$(echo $data | jq '.id')"
+		echo $tmp
+		if [ "$tmp" != "null" ]; then
+
+			user="$(jq -r ".id" <<< "$data")"	#user will be saved as global var, and will be filled with user id. 
+			homeid="$(jq -r ".HomeID" <<< "$data")"	#homeid will be saved as global var, and will be filled with home id of course.
+			if ! [ -e "user.txt" ]; then
+				echo "{\"id\":\"$user\"}" > user.txt
+			else
+				rm "user.txt"
+				echo "{\"id\":\"$user\"}" > user.txt
+			fi
+
+			if ! [ -e "home.txt" ]; then
+				echo "{\"homeID\":\"$homeid\"}" > home.txt
+			else
+				rm "home.txt"
+				echo "{\"homeID\":\"$homeid\"}" > home.txt
+			fi
+			
+			echo -e "\n--------------------\nLogin agent :  Welcome $user \n--------------------"
+		else
+			message=$(jq -r ".message" <<< "$data")
+			echo -e "\n--------------------\nLogin agent :  $message\n--------------------\n"
+			exit 1
+		fi
+	else
+		echo "Incorrect credentials"
+		exit 1
+	fi
+fi
+
+
+
+#related to socket status. if on or off.
+if [ "$socketStatusFlag" == 1 ]; then
+	#socket status info is what recived from user ($2).
+	if ! [ -z "$socketStatusInfo" ]; then
+		check_sockets_creds "$socketStatusInfo"
+		
+
+		#we need to send socket info to socket on/off function. socketstatus var can be 0 off or 1 on, while socketid is obviously the socket id.
+		
+		if [ "$socketStatus" == "on" ];then		
+
+		data=$(curl -s ""$server_address"/UserScreen/TurnOnOff/sid="$socketId"&status="'1'"&uid="$user"")
+
+		fi
+		if [ "$socketStatus" == "off" ];then		
+
+		data=$(curl -s ""$server_address"/UserScreen/TurnOnOff/sid="$socketId"&status="'0'"&uid="$user"")
+
+		fi				
+
+
+		if [ "$(jq -r ".id" <<< "$data")" != "" ]; then
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :   $message \n--------------------"
+		else
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :  $message \n--------------------\n"
+			exit 1
+		fi
+	else
+		echo "Incorrect credentials"
+		exit 1
+	fi
+fi
+
+
+
+
+#related to add new socket.
+if [ "$socketAddFlag" == 1 ]; then
+	#socket status info is what recived from user ($2).
+	if ! [ -z "$socketDetails" ]; then
+		check_addSocket_creds "$socketDetails"
+		
+
+		#we need to send socket info to socket on/off function. socketstatus var can be 0 off or 1 on, while socketid is obviously the socket id.
+		data=$(curl -s ""$server_address"/UserScreen/AddSocket/uid="$user"&hid="$homeid"&socketName="$socketName"")
+		
+		if [ "$(jq -r ".status" <<< "$data")" == "success" ]; then
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :  $message \n--------------------"
+		else
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :  $message \n--------------------\n"
+			exit 1
+		fi
+	else
+		echo "Incorrect credentials"
+		exit 1
+	fi
+fi
+
+
+
+
+#related to remove user. information related is userid (user to remove) and user(current user logged in, must be admin).
+if [ "$userRemoveInfoFlag" == 1 ]; then
+
+	if ! [ -z "$userRemoveInfo" ]; then
+		check_removeFm_creds "$userRemoveInfo"	#parse one params
+		
+		data=$(curl -s ""$server_address"/UserScreen/RemoveFM/uid="$userRemoveInfo"&admin="$user"")
+
+		if [ "$(jq -r ".status" <<< "$data")" == "success" ]; then
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nUser agent :  $message \n--------------------"
+		else
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nUser agent :  $message \n--------------------\n"
+			exit 1
+		fi
+	else
+		echo "Incorrect credentials"
+		exit 1
+	fi
+fi
+
+
+
+#related to set critical. will set specific socket (by its id) to critical or not.
+if [ "$criticalFlag" == 1 ]; then
+
+	if ! [ -z "$criticalSocketInfo" ]; then
+		set_critical_socket_creds "$criticalSocketInfo"	#parse two params
+
+		data=$(curl -s ""$server_address"/UserScreen/SetCritical/sid="$socketId"&uid="$user"&critical="$criticalSocketInfo"")
+		echo "$data"
+		if [ "$(jq -r ".status" <<< "$data")" == "success" ]; then
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :  $message \n--------------------"
+		else
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :  $message \n--------------------\n"
+			exit 1
+		fi
+	else
+		echo "Incorrect credentials"
+		exit 1
+	fi
+fi
+
+
+
+
+#remove socket from home. here we parsing only one argument to its related creds check. we need to know only what socket to remove, user is already logged in.
+if [ "$socketRemoveFlag" == 1 ]; then
+
+	if ! [ -z "$socketId" ]; then
+		check_socket_remove_creds "$socketId"	#parse ONE param.
+
+		data=$(curl -s ""$server_address"/UserScreen/RemoveSocket/sid="$socketId"&hid="$homeid"")
+		echo "$date"
+		if [ "$(jq -r ".status" <<< "$data")" == "success" ]; then
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :  $message \n--------------------"
+		else
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :  $message \n--------------------\n"
+			exit 1
+		fi
+	else
+		echo "Incorrect credentials"
+		exit 1
+	fi
+fi
+
+
+
+#set timer for specific socket. send time and socket id. user already logged in.
+if [ "$timerFlag" == 1 ]; then
+
+	if ! [ -z "$timerInfo" ]; then
+		check_timer_creds "$timerInfo"	#parse two param.
+		
+		data=$(curl -s ""$server_address"/UserScreen/SetTimer/uid="$user"&sid="$socketId"&timer="$timerInfo"")
+
+		if [ "$(jq -r ".status" <<< "$data")" == "success" ]; then
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :  $message \n--------------------"
+		else
+			message="$(jq -r ".message" <<< "$data")"
+			echo -e "\n--------------------\nSocket agent :  $message \n--------------------\n"
+			exit 1
+		fi
+	else
+		echo "Incorrect credentials"
+		exit 1
+	fi
+fi
+
+
+#will return all sockets information for specific user home.
+if [ "$homeInfoFlag" == 1 ]; then
+		#no creds to check, we check it all in login funcionality.
+		data=$(curl -s ""$server_address"/UserScreen/HomeInfo/hid="$homeid"")
+		
+		echo "$data" | jq
+fi
+
+
+
+
+
+
+
+
+
+
